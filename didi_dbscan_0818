@@ -1,0 +1,148 @@
+import numpy as np
+import pandas as pd
+#dbscan
+from sklearn.cluster import DBSCAN
+#可视化
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+#数学公式
+from math import pi, cos, sin, atan2, sqrt
+
+np.set_printoptions(threshold=10000) # 这个参数填的是你想要多少行显示
+np.set_printoptions(linewidth=10000) # 这个参数填的是横向多宽
+np.set_printoptions(threshold=np.inf) #保证所有数据能够显示，而不是用省略号表示，np.inf表示一个足够大的数
+np.set_printoptions(suppress=True) # 保证数据不以科学计数方式显示
+
+pd.set_option('display.max_rows', None)# 可以填数字，填None表示'行'无限制
+pd.set_option('display.max_columns',None)# 可以填数字，填None表示'列'无限制
+#填数字
+pd.set_option('display.max_columns', 1000)
+pd.set_option('display.max_rows', 1000)
+#宽度
+pd.set_option('display.width', 1000)
+pd.set_option('display.max_colwidth', 1000)
+
+#什么函数？将经纬度坐标转变为弧度
+def get_centroid(cluster):
+    x = y = z = 0
+    coord_num = len(cluster)
+    for coord in cluster:
+        lat = coord[0] * pi / 180
+        lon = coord[1] * pi / 180
+
+        a = cos(lat) * cos(lon)
+        b = cos(lat) * sin(lon)
+        c = sin(lat)
+
+        x += a
+        y += b
+        z += c
+    x /= coord_num
+    y /= coord_num
+    z /= coord_num
+    lon = atan2(y, x)
+    hyp = sqrt(x * x + y * y)
+    lat = atan2(z, hyp)
+    return [lat * 180 / pi, lon * 180 / pi]
+
+#读取数据，提取经纬度两列数据
+# df = pd.read_excel("E:\\1AAAWORK-2020下\\论文数据\\didi_excel\\od.xls")
+# df = pd.read_excel("D:\pycharm\PyProject\od.xls")
+df = pd.read_excel("od_3wan.xls")
+
+# df['name']选取单列数据  df[[latitude,longitude]]选取多列数
+hotel_df = df[['latitude', 'longitude']]
+
+#多少OD点
+l1=len(hotel_df)
+print(l1)
+
+#删除有缺失值的行
+hotel_df = hotel_df.dropna(axis=0, how='any')
+#.values返回所有取值
+hotel_coord = hotel_df.values
+
+#只有经度纬度的值[[lat1,lon1],[lat2,lon2],[...]]
+# print(hotel_coord)
+
+
+
+#设置参数
+R = 6370996.8  # 地球半径
+
+#参数怎样设置？
+#请注意.fit()采用haversine度量的弧度单位坐标
+#eps值仍然是2km，但是它被6371除以，将其转换为弧度2000/R或者2/6371
+
+
+#radians() 方法将角度转换为弧度。
+hotel_cluster = DBSCAN(eps=1500/R, min_samples=int(len(hotel_df) / 14), algorithm='ball_tree',
+                       metric='haversine').fit(np.radians(hotel_coord))
+
+
+#添加一列labels  代表聚类类别
+#如果 eps=2000/R labels==0   如果eps=200/R 则labels全部是-1
+hotel_df['labels'] = hotel_cluster.labels_
+
+#value_counts()  计算有哪些不同的值，并计算每个值有多少个重复值
+#dropna = False 表示保留 nan，默认情况下 dropna 是true，即默认情况下不包含 nan
+cluster_list = hotel_df['labels'].value_counts(dropna=False)
+
+#输出0 937 所以没有分类 label都是0
+print(cluster_list)
+
+center_coords = []
+#df_cluster什么意思
+#for 从第一行开始看
+#汇总中心点
+for index, item_count in cluster_list.iteritems():
+    if index != -1:
+        #df_cluster是抽取hotel_df中labels==index的行
+
+        df_cluster = hotel_df[hotel_df['labels'] == index]
+
+        #调用第一个函数，把经纬度变成弧度
+        #df_cluster[[]]:抽取df_cluster中这一行的两列
+
+        center_coord = get_centroid(df_cluster[["latitude", "longitude"]].values)
+        print(center_coord)
+
+        #[34.24704741642413, 108.95419669533784]
+
+        center_lat = center_coord[0]
+        center_lon = center_coord[1]
+        center_coords.append(center_coord)
+center_coords = pd.DataFrame(center_coords, columns=['latitude', 'longitude'])
+
+
+print(center_coords)
+#当eps=1000/R=15  MIN=LEN()/20=90输出四个中心点 分为4个簇 噪音有803个点
+
+# latitude   longitude
+# 0  34.258893  108.945181
+# 1  34.217937  108.949928
+# 2  34.274945  108.995134
+# 3  34.246699  108.973349
+
+
+# 可视化    alpha=0.7, s:size
+fig, ax = plt.subplots(figsize=[24, 24])
+facility_scatter = ax.scatter(hotel_df['longitude'], hotel_df['latitude'], c=hotel_df['labels'], cmap=cm.Dark2,
+                              edgecolor='None',
+                              alpha=0.7, s=50)
+centroid_scatter = ax.scatter(center_coords['longitude'], center_coords['latitude'], marker='x', linewidths=2,
+                              c='k', s=50)
+
+#图的标题/ zy轴的标题mm
+ax.set_title('Facility Clusters & Facility Centroid', fontsize=30)
+ax.set_xlabel('Longitude', fontsize=24)
+ax.set_ylabel('Latitude', fontsize=24)
+#坐标范围
+ax.set_xlim(108.91,109.00)
+ax.set_ylim(34.20, 34.28)
+ax.legend([facility_scatter, centroid_scatter], ['Facilities', 'Facility Cluster Centroid'], loc='upper right',
+          fontsize=20)
+plt.show()
+
+print(hotel_df)
+# hotel_df.to_csv('demo.csv')
